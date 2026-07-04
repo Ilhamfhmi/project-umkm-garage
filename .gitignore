@@ -1,0 +1,27 @@
+# Dependencies
+/backend/vendor
+/frontend/node_modules
+node_modules
+
+# Environment — JANGAN sampai ke-push (berisi password Supabase!)
+/backend/.env
+/frontend/.env
+.env
+
+# Build
+/frontend/dist
+
+# Laravel
+/backend/storage/*.key
+/backend/public/storage
+/backend/.phpunit.result.cache
+
+# Logs & cache
+*.log
+/backend/storage/logs/*
+/backend/bootstrap/cache/*
+
+# Editor
+.vscode
+.idea
+.DS_Store
