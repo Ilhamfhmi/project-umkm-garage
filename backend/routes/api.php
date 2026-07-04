@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\StockController;
+use App\Http\Controllers\Api\ReturnController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -27,6 +28,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/sales', [SaleController::class, 'store']);
         Route::post('/stock/masuk', [StockController::class, 'masuk']);
         Route::post('/stock/adjust', [StockController::class, 'adjust']);
+
+        // Retur — cari transaksi & proses retur
+        Route::post('/returns/cari', [ReturnController::class, 'cariTransaksi']);
+        Route::post('/returns', [ReturnController::class, 'store']);
     });
 
     // Lihat transaksi & laporan — semua role
@@ -36,6 +41,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reports/dashboard', [ReportController::class, 'dashboard']);
     Route::get('/reports/penjualan', [ReportController::class, 'penjualan']);
     Route::get('/reports/produk-terlaris', [ReportController::class, 'produkTerlaris']);
+
+    // Lihat retur — semua role
+    Route::get('/returns', [ReturnController::class, 'index']);
+    Route::get('/returns/{return}', [ReturnController::class, 'show']);
 
     // Kelola produk & kategori — admin only
     Route::middleware('role:admin')->group(function () {
