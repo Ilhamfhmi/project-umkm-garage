@@ -1,1 +1,38 @@
 @import "tailwindcss";
+
+@theme {
+  /* Warna utama navy */
+  --color-navy-50: #eef3f8;
+  --color-navy-100: #d5e0ec;
+  --color-navy-200: #aec4d9;
+  --color-navy-300: #7fa1c0;
+  --color-navy-400: #517ba3;
+  --color-navy-500: #234c6a;
+  --color-navy-600: #1e435e;
+  --color-navy-700: #193850;
+  --color-navy-800: #142c3f;
+  --color-navy-900: #0f2130;
+
+  /* Netral (abu clean) */
+  --color-ink: #1a2530;
+  --color-muted: #64748b;
+  --color-line: #e2e8f0;
+  --color-surface: #ffffff;
+  --color-canvas: #f6f8fb;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar halus */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; border: 2px solid var(--color-canvas); }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }

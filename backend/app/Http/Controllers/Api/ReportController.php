@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\ReturnSale;
 use App\Models\Sale;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,16 +16,27 @@ class ReportController extends Controller
     {
         $today = now()->toDateString();
 
+        // Penjualan kotor
+        $jualHariIni  = (float) Sale::whereDate('created_at', $today)->sum('total');
+        $jualBulanIni = (float) Sale::whereMonth('created_at', now()->month)
+                                    ->whereYear('created_at', now()->year)->sum('total');
+
+        // Retur (untuk dikurangkan)
+        $returHariIni  = (float) ReturnSale::whereDate('created_at', $today)->sum('total_retur');
+        $returBulanIni = (float) ReturnSale::whereMonth('created_at', now()->month)
+                                           ->whereYear('created_at', now()->year)->sum('total_retur');
+
         return response()->json([
             'penjualan_hari_ini' => [
                 'jumlah_transaksi' => Sale::whereDate('created_at', $today)->count(),
-                'total_omzet'      => (float) Sale::whereDate('created_at', $today)->sum('total'),
+                'total_omzet'      => $jualHariIni - $returHariIni, // omzet bersih
+                'total_retur'      => $returHariIni,
             ],
             'penjualan_bulan_ini' => [
                 'jumlah_transaksi' => Sale::whereMonth('created_at', now()->month)
                                           ->whereYear('created_at', now()->year)->count(),
-                'total_omzet'      => (float) Sale::whereMonth('created_at', now()->month)
-                                          ->whereYear('created_at', now()->year)->sum('total'),
+                'total_omzet'      => $jualBulanIni - $returBulanIni, // omzet bersih
+                'total_retur'      => $returBulanIni,
             ],
             'total_produk'   => Product::where('is_active', true)->count(),
             'stok_menipis'   => Product::whereColumn('stok', '<=', 'stok_minimum')
@@ -52,11 +64,20 @@ class ReportController extends Controller
             ->latest('created_at')
             ->get();
 
+        // Total retur di periode yang sama
+        $totalRetur = (float) ReturnSale::whereDate('created_at', '>=', $from)
+            ->whereDate('created_at', '<=', $to)
+            ->sum('total_retur');
+
+        $omzetKotor = (float) $sales->sum('total');
+
         return response()->json([
             'periode' => ['from' => $from, 'to' => $to],
             'ringkasan' => [
                 'jumlah_transaksi' => $sales->count(),
-                'total_omzet'      => (float) $sales->sum('total'),
+                'omzet_kotor'      => $omzetKotor,
+                'total_retur'      => $totalRetur,
+                'total_omzet'      => $omzetKotor - $totalRetur, // omzet bersih
                 'total_diskon'     => (float) $sales->sum('diskon'),
             ],
             'transaksi' => $sales,

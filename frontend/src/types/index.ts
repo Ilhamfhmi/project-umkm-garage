@@ -51,8 +51,8 @@ export interface Sale {
 }
 
 export interface DashboardData {
-  penjualan_hari_ini: { jumlah_transaksi: number; total_omzet: number };
-  penjualan_bulan_ini: { jumlah_transaksi: number; total_omzet: number };
+  penjualan_hari_ini: { jumlah_transaksi: number; total_omzet: number; total_retur: number };
+  penjualan_bulan_ini: { jumlah_transaksi: number; total_omzet: number; total_retur: number };
   total_produk: number;
   stok_menipis: { id: string; nama: string; stok: number; stok_minimum: number }[];
   transaksi_terbaru: Sale[];

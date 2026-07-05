@@ -10,6 +10,8 @@ import Kategori from './pages/Kategori';
 import Stok from './pages/Stok';
 import Pelanggan from './pages/Pelanggan';
 import Laporan from './pages/Laporan';
+import Toaster from './components/ui/Toaster';
+import ConfirmDialog from './components/ui/ConfirmDialog'
 import RoleRoute from './components/RoleRoute';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -23,6 +25,8 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <Toaster />
+      <ConfirmDialog />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route
