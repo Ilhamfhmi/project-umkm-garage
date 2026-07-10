@@ -1,754 +1,717 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Search, Plus, Minus, ShoppingCart, X, Trash2, 
-  Package, AlertCircle, Check, ShoppingBag, Tag,
-  Hash, TrendingDown
+import {
+  Search, ShoppingCart, X, Plus, Minus,
+  ChevronRight, CheckCircle2, Printer,
 } from 'lucide-react';
+import { getCategories } from '../api/category';
+import { getBrands, type Brand } from '../api/brand';
 import { searchProducts } from '../api/product';
 import { useCart } from '../store/cart';
 import { rupiah } from '../lib/format';
-import type { Product } from '../types';
-import CheckoutModal from '../components/CheckoutModal';
+import { toast } from '../store/toast';
+import type { Category, Product } from '../types';
+
+// ── Checkout modal ──────────────────────────────────────────
+import { checkout } from '../api/sale';
+import { useAuth } from '../store/auth';
+
+interface SuccessData {
+  invoice_no: string;
+  created_at: string;
+  kasir?: string;
+  tipe_harga: 'umum' | 'mitra';
+  items: { nama: string; qty: number; harga: number; subtotal: number }[];
+  subtotal: number;
+  diskon: number;
+  total: number;
+  bayar: number;
+  kembalian: number;
+}
 
 export default function Kasir() {
-  const [search, setSearch] = useState('');
+  const user = useAuth((s) => s.user);
+  const cart = useCart();
+
+  // ── Navigasi hierarki ──
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const [activeCat, setActiveCat] = useState<Category | null>(null);
+  const [activeBrand, setActiveBrand] = useState<Brand | null>(null);
+
+  // ── Search ──
+  const [search, setSearch] = useState('');
+  const [searchMode, setSearchMode] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // ── Loading ──
+  const [loadingCat, setLoadingCat] = useState(true);
+  const [loadingBrand, setLoadingBrand] = useState(false);
+  const [loadingProduct, setLoadingProduct] = useState(false);
+
+  // ── Checkout ──
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [qtyMap, setQtyMap] = useState<Record<string, number>>({});
-  const [addedProductId, setAddedProductId] = useState<string | null>(null);
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [diskon, setDiskon] = useState(0);
+  const [bayar, setBayar] = useState(0);
+  const [paying, setPaying] = useState(false);
+  const [success, setSuccess] = useState<SuccessData | null>(null);
 
-  const cart = useCart();
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const initialLoadDone = useRef(false);
-
-  // Load semua produk saat pertama kali mount
+  // Load kategori
   useEffect(() => {
-    async function loadInitialProducts() {
-      try {
-        setLoading(true);
-        const data = await searchProducts('');
-        setProducts(data);
-        initialLoadDone.current = true;
-      } catch (error) {
-        console.error('Failed to load products:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadInitialProducts();
+    getCategories()
+      .then((cats) => {
+        setCategories(cats);
+        if (cats.length > 0) setActiveCat(cats[0]);
+      })
+      .finally(() => setLoadingCat(false));
   }, []);
 
-  // Search dengan debounce (setelah initial load)
+  // Load brand saat kategori berubah
   useEffect(() => {
-    if (!initialLoadDone.current) return;
+    if (!activeCat) return;
+    setActiveBrand(null);
+    setProducts([]);
+    setLoadingBrand(true);
+    getBrands(activeCat.id)
+      .then(setBrands)
+      .finally(() => setLoadingBrand(false));
+  }, [activeCat]);
 
-    setLoading(true);
-    clearTimeout(debounceRef.current);
-    
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const data = await searchProducts(search);
-        setProducts(data);
-      } catch (error) {
-        console.error('Search failed:', error);
-      } finally {
-        setLoading(false);
-      }
+  // Load produk saat brand berubah
+  useEffect(() => {
+    if (!activeBrand) return;
+    setLoadingProduct(true);
+    searchProducts('', activeCat?.id, activeBrand.id)
+      .then(setProducts)
+      .finally(() => setLoadingProduct(false));
+  }, [activeBrand]);
+
+  // Search mode — cari langsung tanpa filter hierarki
+  useEffect(() => {
+    if (!searchMode) return;
+    if (!search.trim()) { setProducts([]); return; }
+    setLoadingProduct(true);
+    const timer = setTimeout(() => {
+      searchProducts(search)
+        .then(setProducts)
+        .finally(() => setLoadingProduct(false));
     }, 300);
+    return () => clearTimeout(timer);
+  }, [search, searchMode]);
 
-    return () => clearTimeout(debounceRef.current);
-  }, [search]);
-
-  const getQty = useCallback((id: string) => qtyMap[id] ?? 1, [qtyMap]);
-  
-  const setQty = useCallback((id: string, val: number) => {
-    setQtyMap((m) => ({ ...m, [id]: Math.max(1, val) }));
-  }, []);
-
-  function handleAdd(product: Product) {
-    const qty = getQty(product.id);
-    if (qty > product.stok) {
-      alert(`Stok ${product.nama} hanya tersedia ${product.stok}`);
-      return;
-    }
-    cart.addItem(product, qty);
-    setQty(product.id, 1);
-    setAddedProductId(product.id);
-    setTimeout(() => setAddedProductId(null), 1500);
-    setCartOpen(true);
+  function enterSearch() {
+    setSearchMode(true);
+    setSearch('');
+    setProducts([]);
+    setTimeout(() => searchRef.current?.focus(), 100);
   }
 
-  const totalItem = cart.items.reduce((s, it) => s + it.qty, 0);
-  const hasItems = cart.items.length > 0;
+  function exitSearch() {
+    setSearchMode(false);
+    setSearch('');
+    setProducts([]);
+    // Reload produk brand aktif
+    if (activeBrand) {
+      setLoadingProduct(true);
+      searchProducts('', activeCat?.id, activeBrand.id)
+        .then(setProducts)
+        .finally(() => setLoadingProduct(false));
+    }
+  }
+
+  function addToCart(p: Product) {
+    if (p.stok <= 0) {
+      toast.error('Stok habis', `${p.nama} tidak tersedia.`);
+      return;
+    }
+    const harga = cart.tipeHarga === 'mitra'
+      ? parseFloat(p.harga_mitra)
+      : parseFloat(p.harga_umum);
+    const existing = cart.items.find((i) => i.product.id === p.id);
+    if (existing && existing.qty >= p.stok) {
+      toast.error('Stok tidak cukup', `Maksimal ${p.stok} ${p.satuan}.`);
+      return;
+    }
+    cart.addItem(p, harga);
+    toast.success(`${p.nama} ditambahkan`, `ke keranjang`);
+  }
+
+  // Checkout
   const subtotal = cart.subtotal();
+  const total = Math.max(0, subtotal - diskon);
+  const kembalian = bayar - total;
 
-  // Keyboard shortcut (hanya sebagai tambahan)
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      // Ctrl+F / Cmd+F untuk fokus search (shortcut tambahan)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }
-      // Escape untuk tutup cart panel
-      if (e.key === 'Escape' && cartOpen) {
-        setCartOpen(false);
-      }
-      // Escape untuk clear search jika sedang fokus
-      if (e.key === 'Escape' && document.activeElement === searchInputRef.current && search) {
-        setSearch('');
-      }
-    };
+  async function handleBayar() {
+    if (bayar < total) {
+      toast.error('Uang kurang', `Kurang ${rupiah(total - bayar)}`);
+      return;
+    }
+    setPaying(true);
+    try {
+      const snapshot = cart.items.map((it) => ({
+        nama: it.product.nama,
+        qty: it.qty,
+        harga: it.harga,
+        subtotal: it.harga * it.qty,
+      }));
+      const res = await checkout({
+        tipe_harga: cart.tipeHarga,
+        bayar,
+        diskon,
+        items: cart.items.map((it) => ({
+          product_id: it.product.id,
+          qty: it.qty,
+        })),
+      });
+      setSuccess({
+        invoice_no: res.invoice_no,
+        created_at: res.created_at ?? new Date().toISOString(),
+        kasir: user?.name,
+        tipe_harga: cart.tipeHarga,
+        items: snapshot,
+        subtotal,
+        diskon,
+        total,
+        bayar,
+        kembalian: parseFloat(res.kembalian),
+      });
+      cart.clear();
+      toast.success('Transaksi berhasil', res.invoice_no);
+    } catch (err: any) {
+      toast.error('Transaksi gagal', err.response?.data?.message);
+    } finally {
+      setPaying(false);
+    }
+  }
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [cartOpen, search]);
+  function resetCheckout() {
+    setSuccess(null);
+    setCheckoutOpen(false);
+    setCartOpen(false);
+    setDiskon(0);
+    setBayar(0);
+  }
+
+  const quickAmounts = [
+    total,
+    Math.ceil(total / 50000) * 50000,
+    Math.ceil(total / 100000) * 100000,
+    Math.ceil(total / 50000) * 50000 + 50000,
+  ].filter((v, i, arr) => arr.indexOf(v) === i && v >= total).slice(0, 4);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
-      <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
-        {/* Header Section */}
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6"
-        >
-          <div className="flex items-center gap-3">
-            <div 
-              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
-              style={{ backgroundColor: '#234C6A' }}
+    <div className="flex flex-col h-full -m-6">
+
+      {/* ── TOP BAR ── */}
+      <div className="bg-white border-b border-line px-4 py-3 flex items-center gap-3 shrink-0">
+        {/* Tipe harga toggle */}
+        <div className="flex bg-slate-100 rounded-lg p-0.5">
+          {(['umum', 'mitra'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => cart.setTipeHarga(t)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition ${
+                cart.tipeHarga === t
+                  ? 'bg-white text-[#234C6A] shadow-sm'
+                  : 'text-muted hover:text-ink'
+              }`}
             >
-              <ShoppingCart className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Kasir</h1>
-              <p className="text-sm text-slate-500 mt-0.5">
-                {products.length} produk tersedia
-              </p>
-            </div>
-          </div>
+              {t}
+            </button>
+          ))}
+        </div>
 
-          {/* Price Type Toggle & Cart Button */}
-          <div className="flex items-center gap-3">
-            {/* Tipe Harga Selector */}
-            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-              <span className="text-xs font-medium text-slate-500 pl-2 flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5" />
-                Harga
-              </span>
-              <div className="flex bg-slate-100 rounded-lg p-0.5">
-                {(['umum', 'mitra'] as const).map((t) => (
-                  <motion.button
-                    key={t}
-                    onClick={() => cart.setTipeHarga(t)}
-                    whileTap={{ scale: 0.95 }}
-                    className={`relative px-4 py-2 rounded-md text-xs font-medium capitalize transition-all duration-200 ${
-                      cart.tipeHarga === t
-                        ? 'text-white'
-                        : 'text-slate-600 hover:text-slate-800'
-                    }`}
-                  >
-                    {cart.tipeHarga === t && (
-                      <motion.div
-                        layoutId="priceTypeBg"
-                        className="absolute inset-0 rounded-md shadow-sm"
-                        style={{ backgroundColor: '#234C6A' }}
-                        transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
-                      />
-                    )}
-                    <span className="relative z-10">{t}</span>
-                  </motion.button>
-                ))}
+        {/* Search */}
+        <div className={`flex-1 relative transition-all ${searchMode ? 'flex' : 'flex'}`}>
+          {searchMode ? (
+            <div className="flex-1 flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  ref={searchRef}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Cari produk apa saja..."
+                  className="w-full border border-[#234C6A] rounded-lg pl-10 pr-4 py-2 text-sm text-ink
+                    focus:outline-none focus:ring-2 focus:ring-[#234C6A]/10"
+                />
               </div>
-            </div>
-
-            {/* Cart Button (Desktop) */}
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setCartOpen(true)}
-              className="hidden lg:flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 
-                rounded-xl text-sm font-medium text-slate-700 hover:border-slate-300 hover:shadow-sm 
-                transition-all"
-            >
-              <div className="relative">
-                <ShoppingCart className="w-4 h-4" />
-                {totalItem > 0 && (
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] 
-                      font-bold rounded-full flex items-center justify-center"
-                  >
-                    {totalItem}
-                  </motion.span>
-                )}
-              </div>
-              <span>{rupiah(subtotal)}</span>
-            </motion.button>
-          </div>
-        </motion.div>
-
-        {/* Search Bar - BISA LANGSUNG DIKLIK & DIKETIK */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="relative mb-6"
-        >
-          <div 
-            className={`relative transition-all duration-300 ${
-              searchFocused ? 'scale-[1.01]' : ''
-            }`}
-            onClick={() => {
-              // Saat search bar diklik, fokus ke input
-              searchInputRef.current?.focus();
-            }}
-          >
-            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              searchFocused ? 'ring-2 ring-offset-2 opacity-100' : 'opacity-0'
-            }`} 
-            style={{ 
-              ringColor: '#234C6A', 
-              ringOffsetColor: 'transparent' 
-            }} />
-            <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-300 ${
-              searchFocused ? 'text-[#234C6A]' : 'text-slate-400'
-            }`} />
-            <input
-              ref={searchInputRef}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              placeholder="Ketik untuk mencari produk..."
-              className="w-full bg-white border-2 border-slate-200 rounded-xl pl-12 pr-12 py-3.5 text-sm 
-                focus:outline-none focus:border-[#234C6A] transition-all duration-300
-                placeholder:text-slate-400 text-slate-800 shadow-sm cursor-text"
-            />
-            {search && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 1, scale: 1 }}
-                onClick={(e) => {
-                  e.stopPropagation(); // Hentikan propagasi agar tidak trigger fokus
-                  setSearch('');
-                  searchInputRef.current?.focus();
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg 
-                  text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+              <button
+                onClick={exitSearch}
+                className="text-xs text-muted hover:text-red-500 transition px-2"
               >
-                <X className="w-4 h-4" />
-              </motion.button>
+                Batal
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={enterSearch}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-line text-sm text-muted hover:border-[#234C6A] hover:text-[#234C6A] transition w-full sm:w-64"
+            >
+              <Search className="w-4 h-4" />
+              Cari produk cepat...
+            </button>
+          )}
+        </div>
+
+        {/* Keranjang */}
+        <button
+          onClick={() => setCartOpen(true)}
+          className="relative flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold transition"
+          style={{ backgroundColor: '#234C6A' }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1e435e')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#234C6A')}
+        >
+          <ShoppingCart className="w-4 h-4" />
+          <span className="hidden sm:inline">Keranjang</span>
+          {cart.items.length > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+              {cart.items.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ── NAVIGASI HIERARKI ── */}
+      {!searchMode && (
+        <div className="bg-white border-b border-line shrink-0">
+          {/* Tab Kategori */}
+          <div className="flex gap-1 px-4 pt-3 overflow-x-auto scrollbar-hide">
+            {loadingCat ? (
+              [...Array(4)].map((_, i) => (
+                <div key={i} className="h-8 w-24 bg-slate-100 rounded-full animate-pulse shrink-0" />
+              ))
+            ) : (
+              categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCat(cat)}
+                  className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition whitespace-nowrap ${
+                    activeCat?.id === cat.id
+                      ? 'text-white'
+                      : 'bg-slate-100 text-muted hover:bg-slate-200 hover:text-ink'
+                  }`}
+                  style={activeCat?.id === cat.id ? { backgroundColor: '#234C6A' } : {}}
+                >
+                  {cat.nama}
+                </button>
+              ))
             )}
           </div>
-          
-          {/* Search Info */}
-          <div className="flex items-center justify-between mt-2 px-1">
-            <div>
-              {search ? (
-                <p className="text-xs text-slate-500">
-                  Hasil pencarian "{search}" · {products.length} produk ditemukan
-                </p>
-              ) : (
-                <p className="text-xs text-slate-400">
-                  Menampilkan semua produk · {products.length} produk
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10px] 
-                text-slate-400 font-mono shadow-sm">Esc</kbd>
-              <span className="text-[10px] text-slate-400">reset</span>
-            </div>
+
+          {/* Tab Merek */}
+          <div className="flex gap-1.5 px-4 py-2.5 overflow-x-auto scrollbar-hide">
+            {loadingBrand ? (
+              [...Array(5)].map((_, i) => (
+                <div key={i} className="h-7 w-20 bg-slate-100 rounded-full animate-pulse shrink-0" />
+              ))
+            ) : brands.length === 0 ? (
+              <p className="text-xs text-muted py-1">Pilih kategori dulu.</p>
+            ) : (
+              brands.map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => setActiveBrand(b)}
+                  className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition whitespace-nowrap border ${
+                    activeBrand?.id === b.id
+                      ? 'border-[#234C6A] text-[#234C6A] bg-[#234C6A]/5'
+                      : 'border-line text-muted hover:border-slate-300 hover:text-ink'
+                  }`}
+                >
+                  {b.nama}
+                </button>
+              ))
+            )}
           </div>
-        </motion.div>
+        </div>
+      )}
 
-        {/* Product Grid */}
-        <AnimatePresence mode="wait">
-          {loading ? (
-            <motion.div
-              key="loading"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-            >
-              {[...Array(8)].map((_, i) => (
-                <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 animate-pulse">
-                  <div className="flex justify-between mb-4">
-                    <div className="h-4 bg-slate-100 rounded w-3/4" />
-                    <div className="w-16 h-5 bg-slate-100 rounded-full" />
-                  </div>
-                  <div className="h-3 bg-slate-100 rounded w-1/2 mb-4" />
-                  <div className="h-6 bg-slate-100 rounded w-1/3 mb-4" />
-                  <div className="h-3 bg-slate-100 rounded w-1/4 mb-4" />
-                  <div className="flex gap-2 mb-3">
-                    <div className="h-9 bg-slate-100 rounded-lg w-24" />
-                    <div className="h-9 bg-slate-100 rounded-lg flex-1" />
-                  </div>
-                </div>
-              ))}
-            </motion.div>
-          ) : products.length === 0 ? (
-            <motion.div
-              key="empty"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center py-20 text-center"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 
-                flex items-center justify-center mb-4">
-                <Package className="w-8 h-8 text-slate-400" />
+      {/* ── GRID PRODUK ── */}
+      <div className="flex-1 overflow-y-auto p-4 bg-canvas">
+        {/* Breadcrumb */}
+        {!searchMode && activeCat && (
+          <div className="flex items-center gap-1.5 text-xs text-muted mb-3">
+            <span>{activeCat.nama}</span>
+            {activeBrand && (
+              <>
+                <ChevronRight className="w-3 h-3" />
+                <span className="text-[#234C6A] font-medium">{activeBrand.nama}</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {loadingProduct ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="bg-white border border-line rounded-xl p-3 animate-pulse">
+                <div className="h-4 bg-slate-100 rounded w-3/4 mb-2" />
+                <div className="h-3 bg-slate-100 rounded w-1/2 mb-3" />
+                <div className="h-6 bg-slate-100 rounded" />
               </div>
-              <p className="text-sm font-medium text-slate-600">
-                {search ? `Tidak ada produk dengan kata kunci "${search}"` : 'Belum ada produk'}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                {search ? 'Coba kata kunci lain atau' : 'Tambahkan produk terlebih dahulu'}
-              </p>
-              {search && (
+            ))}
+          </div>
+        ) : !activeBrand && !searchMode ? (
+          <div className="flex flex-col items-center justify-center h-48 text-center">
+            <div className="w-12 h-12 rounded-full bg-white border border-line flex items-center justify-center mx-auto mb-3 shadow-sm">
+              <ShoppingCart className="w-5 h-5 text-muted" />
+            </div>
+            <p className="text-sm font-medium text-ink">Pilih merek produk</p>
+            <p className="text-xs text-muted mt-1">Klik salah satu merek di atas untuk melihat produk.</p>
+          </div>
+        ) : products.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-48 text-center">
+            <div className="w-12 h-12 rounded-full bg-white border border-line flex items-center justify-center mx-auto mb-3 shadow-sm">
+              <Search className="w-5 h-5 text-muted" />
+            </div>
+            <p className="text-sm font-medium text-ink">
+              {searchMode ? 'Produk tidak ditemukan' : 'Belum ada produk'}
+            </p>
+            <p className="text-xs text-muted mt-1">
+              {searchMode ? `Tidak ada hasil untuk "${search}"` : 'Produk belum tersedia untuk merek ini.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {products.map((p, i) => {
+              const harga = cart.tipeHarga === 'mitra'
+                ? parseFloat(p.harga_mitra)
+                : parseFloat(p.harga_umum);
+              const habis = p.stok <= 0;
+              const inCart = cart.items.find((it) => it.product.id === p.id);
+
+              return (
                 <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    setSearch('');
-                    searchInputRef.current?.focus();
-                  }}
-                  className="mt-4 px-4 py-2 text-xs font-medium text-white rounded-lg 
-                    hover:shadow-md transition-all"
-                  style={{ backgroundColor: '#234C6A' }}
+                  key={p.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                  onClick={() => !habis && addToCart(p)}
+                  disabled={habis}
+                  className={`relative bg-white border rounded-xl p-3 text-left transition-all
+                    ${habis
+                      ? 'opacity-50 cursor-not-allowed border-line'
+                      : inCart
+                        ? 'border-[#234C6A] shadow-sm ring-1 ring-[#234C6A]/20'
+                        : 'border-line hover:border-[#234C6A]/50 hover:shadow-sm'}`}
                 >
-                  Tampilkan Semua Produk
+                  {/* Badge qty di keranjang */}
+                  {inCart && (
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full text-white text-[10px] font-bold flex items-center justify-center"
+                      style={{ backgroundColor: '#234C6A' }}>
+                      {inCart.qty}
+                    </span>
+                  )}
+
+                  {/* Nama produk */}
+                  <div className="text-xs font-semibold text-ink leading-tight line-clamp-2 mb-1.5 min-h-[2.5rem]">
+                    {p.nama}
+                  </div>
+
+                  {/* Stok */}
+                  <div className={`text-[10px] mb-2 ${
+                    habis ? 'text-red-500' :
+                    p.stok <= p.stok_minimum && p.stok_minimum > 0 ? 'text-amber-500' :
+                    'text-muted'
+                  }`}>
+                    {habis ? 'Stok habis' : `Stok: ${p.stok} ${p.satuan}`}
+                  </div>
+
+                  {/* Harga */}
+                  <div className="text-sm font-bold" style={{ color: '#234C6A' }}>
+                    {rupiah(harga)}
+                  </div>
                 </motion.button>
-              )}
-            </motion.div>
-          ) : (
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── PANEL KERANJANG ── */}
+      <AnimatePresence>
+        {cartOpen && (
+          <>
             <motion.div
-              key="products"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+              onClick={() => setCartOpen(false)}
+              className="fixed inset-0 bg-black/40 z-40"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+              className="fixed top-0 right-0 h-full w-full max-w-sm bg-white z-50 flex flex-col shadow-2xl"
             >
-              {products.map((p, index) => {
-                const harga = parseFloat(cart.tipeHarga === 'mitra' ? p.harga_mitra : p.harga_umum);
-                const habis = p.stok <= 0;
-                const menipis = !habis && p.stok <= p.stok_minimum && p.stok_minimum > 0;
-                const isAdded = addedProductId === p.id;
-
-                return (
-                  <motion.div
-                    key={p.id}
-                    layout
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.03 }}
-                    whileHover={{ y: -2 }}
-                    className={`group relative bg-white border rounded-xl p-5 transition-all duration-300 ${
-                      habis 
-                        ? 'border-slate-200 opacity-60' 
-                        : 'border-slate-200 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-200/50'
-                    }`}
-                  >
-                    {/* Stock Status Badge */}
-                    {menipis && (
-                      <div className="absolute -top-2 -right-2 z-10">
-                        <motion.div
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          className="flex items-center gap-1.5 bg-amber-500 text-white text-[10px] 
-                            font-semibold px-2.5 py-1 rounded-full shadow-lg"
-                        >
-                          <TrendingDown className="w-3 h-3" />
-                          <span>Menipis</span>
-                        </motion.div>
-                      </div>
-                    )}
-
-                    {/* Product Header */}
-                    <div className="mb-4">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <h3 className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2
-                          group-hover:text-[#234C6A] transition-colors">
-                          {p.nama}
-                        </h3>
-                        <span className={`shrink-0 text-[10px] px-2.5 py-1 rounded-full font-semibold ${
-                          cart.tipeHarga === 'mitra'
-                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}>
-                          {cart.tipeHarga}
-                        </span>
-                      </div>
-                      {p.category && (
-                        <div className="flex items-center gap-1.5">
-                          <Hash className="w-3 h-3 text-slate-400" />
-                          <p className="text-[11px] text-slate-500 font-medium">
-                            {p.category.nama}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Price */}
-                    <div className="mb-3">
-                      <span className="text-xl font-bold text-slate-800">
-                        {rupiah(harga)}
-                      </span>
-                      {p.satuan && (
-                        <span className="text-xs text-slate-500 ml-1">/ {p.satuan}</span>
-                      )}
-                    </div>
-
-                    {/* Stock Info */}
-                    <div className="mb-4">
-                      {habis ? (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full bg-red-400" />
-                          <span className="text-xs text-red-500 font-medium">Stok habis</span>
-                        </div>
-                      ) : menipis ? (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full bg-amber-400" />
-                          <span className="text-xs text-amber-600 font-medium">
-                            Sisa {p.stok} {p.satuan}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-500">
-                          Stok: {p.stok} {p.satuan}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Action Section */}
-                    <div className="mt-auto space-y-2.5">
-                      {/* Quantity Control */}
-                      {!habis && (
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center bg-slate-50 border border-slate-200 
-                            rounded-lg overflow-hidden">
-                            <motion.button
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => setQty(p.id, getQty(p.id) - 1)}
-                              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 
-                                transition-colors"
-                              disabled={getQty(p.id) <= 1}
-                            >
-                              <Minus className="w-3.5 h-3.5" />
-                            </motion.button>
-                            <input
-                              type="number"
-                              value={getQty(p.id)}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value);
-                                if (!isNaN(val) && val > 0) {
-                                  setQty(p.id, val);
-                                }
-                              }}
-                              className="w-12 bg-transparent text-center text-sm font-semibold 
-                                text-slate-800 focus:outline-none"
-                              min="1"
-                              max={p.stok}
-                            />
-                            <motion.button
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => setQty(p.id, getQty(p.id) + 1)}
-                              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 
-                                transition-colors"
-                              disabled={getQty(p.id) >= p.stok}
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </motion.button>
-                          </div>
-                          <span className="text-xs text-slate-400">{p.satuan}</span>
-                        </div>
-                      )}
-
-                      {/* Add to Cart Button */}
-                      <motion.button
-                        onClick={() => handleAdd(p)}
-                        disabled={habis}
-                        whileTap={!habis ? { scale: 0.98 } : undefined}
-                        className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 
-                          rounded-lg text-sm font-semibold transition-all duration-300 ${
-                          isAdded
-                            ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                            : habis
-                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            : 'text-white shadow-md hover:shadow-lg'
-                        }`}
-                        style={!isAdded && !habis ? { backgroundColor: '#234C6A' } : undefined}
-                        onMouseEnter={(e) => {
-                          if (!isAdded && !habis) {
-                            e.currentTarget.style.backgroundColor = '#1e435e';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isAdded && !habis) {
-                            e.currentTarget.style.backgroundColor = '#234C6A';
-                          }
-                        }}
-                      >
-                        {isAdded ? (
-                          <>
-                            <Check className="w-4 h-4" />
-                            <span>Ditambahkan</span>
-                          </>
-                        ) : habis ? (
-                          <>
-                            <X className="w-4 h-4" />
-                            <span>Stok Habis</span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-4 h-4" />
-                            <span>Tambah</span>
-                            <span className="text-xs opacity-75">
-                              {getQty(p.id)} {p.satuan}
-                            </span>
-                          </>
-                        )}
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Floating Cart Button (Mobile) */}
-        <AnimatePresence>
-          <motion.button
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0, opacity: 0 }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setCartOpen(true)}
-            className="lg:hidden fixed bottom-6 right-6 flex items-center gap-3 text-white 
-              font-semibold rounded-2xl pl-5 pr-6 py-4 shadow-2xl transition-all z-30"
-            style={{ backgroundColor: '#234C6A' }}
-          >
-            <div className="relative">
-              <ShoppingCart className="w-5 h-5" />
-              {totalItem > 0 && (
-                <motion.span
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] 
-                    font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-lg"
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="w-4 h-4 text-muted" />
+                  <h2 className="text-base font-semibold text-ink">Keranjang</h2>
+                  <span className="text-xs text-muted">({cart.items.length} item)</span>
+                </div>
+                <button
+                  onClick={() => setCartOpen(false)}
+                  className="p-1.5 rounded-lg text-muted hover:bg-slate-100 transition"
                 >
-                  {totalItem}
-                </motion.span>
-              )}
-            </div>
-            <span className="text-sm">{rupiah(subtotal)}</span>
-          </motion.button>
-        </AnimatePresence>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-        {/* Cart Panel */}
-        <AnimatePresence>
-          {cartOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setCartOpen(false)}
-                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
-              />
-              <motion.div
-                initial={{ x: '100%', opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: '100%', opacity: 0 }}
-                transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-                className="fixed top-0 right-0 h-full w-full max-w-sm bg-white z-50 flex flex-col shadow-2xl"
-              >
-                {/* Cart Header */}
-                <div className="h-16 flex items-center justify-between px-6 border-b border-slate-200">
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="w-9 h-9 rounded-lg flex items-center justify-center"
+              {/* Item list */}
+              <div className="flex-1 overflow-y-auto divide-y divide-line">
+                {cart.items.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 text-center px-6">
+                    <ShoppingCart className="w-10 h-10 text-slate-200 mb-3" />
+                    <p className="text-sm text-muted">Keranjang masih kosong.</p>
+                  </div>
+                ) : (
+                  cart.items.map((it) => (
+                    <div key={it.product.id} className="px-5 py-3.5 flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-ink truncate">{it.product.nama}</div>
+                        <div className="text-xs text-muted">{rupiah(it.harga)} / {it.product.satuan}</div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => cart.updateQty(it.product.id, it.qty - 1)}
+                          className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition"
+                        >
+                          <Minus className="w-3 h-3 text-ink" />
+                        </button>
+                        <span className="w-6 text-center text-sm font-semibold text-ink">{it.qty}</span>
+                        <button
+                          onClick={() => cart.updateQty(it.product.id, it.qty + 1)}
+                          className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition"
+                        >
+                          <Plus className="w-3 h-3 text-ink" />
+                        </button>
+                      </div>
+                      <div className="text-sm font-bold text-ink w-20 text-right shrink-0">
+                        {rupiah(it.harga * it.qty)}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Footer */}
+              {cart.items.length > 0 && (
+                <div className="border-t border-line p-5 space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted">Subtotal</span>
+                    <span className="font-bold text-ink text-base">{rupiah(subtotal)}</span>
+                  </div>
+                  <button
+                    onClick={() => { setCartOpen(false); setCheckoutOpen(true); }}
+                    className="w-full py-3 rounded-lg text-white font-semibold text-sm transition"
+                    style={{ backgroundColor: '#234C6A' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1e435e')}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#234C6A')}
+                  >
+                    Lanjut Bayar
+                  </button>
+                  <button
+                    onClick={() => cart.clear()}
+                    className="w-full py-2 rounded-lg text-xs text-muted hover:text-red-500 hover:bg-red-50 transition"
+                  >
+                    Kosongkan keranjang
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── MODAL CHECKOUT ── */}
+      <AnimatePresence>
+        {checkoutOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !success && setCheckoutOpen(false)}
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md
+                bg-white rounded-xl shadow-2xl z-50 max-h-[90vh] overflow-y-auto"
+            >
+              {success ? (
+                /* ── Layar sukses ── */
+                <div className="p-6 text-center">
+                  <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                  </div>
+                  <h2 className="text-lg font-bold text-ink">Transaksi Berhasil</h2>
+                  <p className="text-sm text-muted mt-1">{success.invoice_no}</p>
+
+                  <div className="bg-slate-50 border border-line rounded-xl p-4 mt-4 text-left space-y-1.5">
+                    {success.items.map((it, i) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-muted truncate mr-2">{it.nama} x{it.qty}</span>
+                        <span className="text-ink font-medium shrink-0">{rupiah(it.subtotal)}</span>
+                      </div>
+                    ))}
+                    <div className="border-t border-line pt-1.5 mt-1.5">
+                      {success.diskon > 0 && (
+                        <div className="flex justify-between text-xs text-muted">
+                          <span>Diskon</span><span>-{rupiah(success.diskon)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm font-bold text-ink mt-1">
+                        <span>Total</span><span>{rupiah(success.total)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 bg-[#234C6A]/5 border border-[#234C6A]/20 rounded-xl p-4">
+                    <div className="text-xs text-muted">Kembalian</div>
+                    <div className="text-3xl font-bold mt-1" style={{ color: '#234C6A' }}>
+                      {rupiah(success.kembalian)}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 mt-5">
+                    <button
+                      onClick={resetCheckout}
+                      className="flex-1 py-2.5 rounded-lg border border-line text-sm font-medium text-muted hover:bg-slate-50 transition"
+                    >
+                      Selesai
+                    </button>
+                    <button
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-white text-sm font-semibold transition"
                       style={{ backgroundColor: '#234C6A' }}
                     >
-                      <ShoppingCart className="w-4 h-4 text-white" />
-                    </div>
-                    <div>
-                      <span className="font-semibold text-sm text-slate-800">Keranjang</span>
-                      {totalItem > 0 && (
-                        <span className="text-xs text-slate-500 ml-1">
-                          ({totalItem} item)
-                        </span>
-                      )}
-                    </div>
+                      <Printer className="w-4 h-4" />
+                      Cetak Struk
+                    </button>
                   </div>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => setCartOpen(false)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-slate-600 
-                      hover:bg-slate-100 transition-all"
-                  >
-                    <X className="w-5 h-5" />
-                  </motion.button>
                 </div>
+              ) : (
+                /* ── Form bayar ── */
+                <>
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+                    <h2 className="text-base font-semibold text-ink">Pembayaran</h2>
+                    <button
+                      onClick={() => setCheckoutOpen(false)}
+                      className="p-1.5 rounded-lg text-muted hover:bg-slate-100 transition"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
 
-                {/* Cart Items */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  <AnimatePresence>
-                    {!hasItems ? (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex flex-col items-center justify-center h-full text-center"
-                      >
-                        <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center 
-                          justify-center mb-4">
-                          <ShoppingBag className="w-10 h-10 text-slate-300" />
+                  <div className="p-6 space-y-4">
+                    {/* Ringkasan item */}
+                    <div className="bg-slate-50 border border-line rounded-xl p-3 space-y-1.5 max-h-36 overflow-y-auto">
+                      {cart.items.map((it) => (
+                        <div key={it.product.id} className="flex justify-between text-xs">
+                          <span className="text-muted truncate mr-2">{it.product.nama} x{it.qty}</span>
+                          <span className="text-ink font-medium shrink-0">{rupiah(it.harga * it.qty)}</span>
                         </div>
-                        <p className="text-sm font-medium text-slate-600 mb-1">
-                          Keranjang kosong
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          Tambahkan produk untuk memulai
-                        </p>
-                      </motion.div>
-                    ) : (
-                      cart.items.map((it) => (
-                        <motion.div
-                          key={it.product.id}
-                          layout
-                          initial={{ opacity: 0, x: 20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: -20, transition: { duration: 0.2 } }}
-                          whileHover={{ scale: 1.01 }}
-                          className="group flex items-center gap-3 bg-slate-50 border border-slate-200 
-                            rounded-xl p-3 hover:border-slate-300 hover:shadow-sm transition-all"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-slate-800 truncate">
-                              {it.product.nama}
-                            </div>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              {rupiah(it.harga)} / {it.product.satuan || 'item'}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 bg-white border border-slate-200 
-                            rounded-lg p-0.5">
-                            <motion.button
-                              whileTap={{ scale: 0.8 }}
-                              onClick={() => cart.updateQty(it.product.id, it.qty - 1)}
-                              className="p-1.5 text-slate-500 hover:text-slate-700 rounded-md 
-                                hover:bg-slate-100 transition-colors"
-                            >
-                              <Minus className="w-3 h-3" />
-                            </motion.button>
-                            <span className="w-8 text-center text-sm font-semibold text-slate-800">
-                              {it.qty}
-                            </span>
-                            <motion.button
-                              whileTap={{ scale: 0.8 }}
-                              onClick={() => cart.updateQty(it.product.id, it.qty + 1)}
-                              className="p-1.5 text-slate-500 hover:text-slate-700 rounded-md 
-                                hover:bg-slate-100 transition-colors"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </motion.button>
-                          </div>
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => cart.removeItem(it.product.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 
-                              rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      ))}
+                    </div>
+
+                    {/* Diskon */}
+                    <div>
+                      <label className="block text-xs font-medium text-muted mb-1.5">Diskon (Rp)</label>
+                      <input
+                        type="number"
+                        value={diskon || ''}
+                        onChange={(e) => setDiskon(parseInt(e.target.value) || 0)}
+                        placeholder="0"
+                        className="w-full border border-line rounded-lg px-3 py-2.5 text-sm text-ink
+                          focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10"
+                      />
+                    </div>
+
+                    {/* Total */}
+                    <div className="flex items-center justify-between py-3 border-t border-b border-line">
+                      <span className="text-sm text-muted">Total</span>
+                      <span className="text-xl font-bold text-ink">{rupiah(total)}</span>
+                    </div>
+
+                    {/* Bayar */}
+                    <div>
+                      <label className="block text-xs font-medium text-muted mb-1.5">Uang Bayar</label>
+                      <input
+                        type="number"
+                        value={bayar || ''}
+                        onChange={(e) => setBayar(parseInt(e.target.value) || 0)}
+                        placeholder="0"
+                        autoFocus
+                        className="w-full border border-line rounded-lg px-3 py-2.5 text-sm text-ink
+                          focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10"
+                      />
+                      {/* Quick amount */}
+                      <div className="flex gap-2 mt-2">
+                        {quickAmounts.map((a) => (
+                          <button
+                            key={a}
+                            onClick={() => setBayar(a)}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition ${
+                              bayar === a
+                                ? 'border-[#234C6A] text-[#234C6A] bg-[#234C6A]/5'
+                                : 'border-line text-muted hover:border-slate-300'
+                            }`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </motion.button>
-                        </motion.div>
-                      ))
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {/* Cart Footer */}
-                {hasItems && (
-                  <motion.div
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    className="border-t border-slate-200 bg-white p-5 space-y-4"
-                  >
-                    <div className="flex items-center justify-between py-2">
-                      <div>
-                        <p className="text-sm text-slate-600">Subtotal</p>
-                        <p className="text-[10px] text-slate-400">
-                          {totalItem} item
-                        </p>
+                            {rupiah(a)}
+                          </button>
+                        ))}
                       </div>
-                      <motion.span
-                        key={subtotal}
-                        initial={{ scale: 1.1 }}
-                        animate={{ scale: 1 }}
-                        className="text-xl font-bold text-slate-800"
-                      >
-                        {rupiah(subtotal)}
-                      </motion.span>
                     </div>
 
-                    <div className="space-y-2">
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => {
-                          setCartOpen(false);
-                          setCheckoutOpen(true);
-                        }}
-                        className="w-full flex items-center justify-center gap-2 text-white 
-                          font-semibold rounded-xl py-3.5 text-sm transition-all shadow-lg"
-                        style={{ backgroundColor: '#234C6A' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1e435e'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#234C6A'}
-                      >
-                        <ShoppingBag className="w-4 h-4" />
-                        Proses Pembayaran
-                      </motion.button>
-                      
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => {
-                          if (window.confirm('Kosongkan semua item di keranjang?')) {
-                            cart.clear();
-                          }
-                        }}
-                        className="w-full text-xs text-slate-500 hover:text-red-600 
-                          transition-colors py-2 font-medium"
-                      >
-                        Kosongkan Keranjang
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                )}
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
+                    {/* Kembalian preview */}
+                    {bayar > 0 && (
+                      <div className={`rounded-xl p-3 text-center ${
+                        kembalian < 0
+                          ? 'bg-red-50 border border-red-200'
+                          : 'bg-emerald-50 border border-emerald-200'
+                      }`}>
+                        <div className="text-xs text-muted mb-0.5">
+                          {kembalian < 0 ? 'Kurang' : 'Kembalian'}
+                        </div>
+                        <div className={`text-xl font-bold ${kembalian < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                          {rupiah(Math.abs(kembalian))}
+                        </div>
+                      </div>
+                    )}
 
-        {/* Checkout Modal */}
-        <CheckoutModal
-          open={checkoutOpen}
-          onClose={() => setCheckoutOpen(false)}
-        />
-      </div>
+                    {/* Tombol bayar */}
+                    <button
+                      onClick={handleBayar}
+                      disabled={paying || bayar < total}
+                      className="w-full py-3 rounded-lg text-white font-semibold text-sm transition disabled:opacity-50"
+                      style={{ backgroundColor: '#234C6A' }}
+                      onMouseEnter={(e) => !paying && bayar >= total && (e.currentTarget.style.backgroundColor = '#1e435e')}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#234C6A')}
+                    >
+                      {paying
+                        ? <span className="flex items-center justify-center gap-2">
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Memproses...
+                          </span>
+                        : `Bayar ${rupiah(total)}`}
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

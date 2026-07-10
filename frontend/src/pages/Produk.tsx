@@ -9,6 +9,8 @@ import { getCategories } from '../api/category';
 import { rupiah } from '../lib/format';
 import { useAuth } from '../store/auth';
 import { can } from '../lib/permissions';
+import { toast } from '../store/toast';
+import { confirmDialog } from '../store/confirm';
 import type { Product, Category } from '../types';
 
 const emptyForm: ProductPayload = {
@@ -23,6 +25,10 @@ const emptyForm: ProductPayload = {
   harga_mitra: 0,
   is_active: true,
 };
+
+const inputCls = `w-full bg-white border border-line rounded-lg px-3 py-2.5 text-sm text-ink
+  placeholder:text-slate-400 transition
+  focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10`;
 
 export default function Produk() {
   const role = useAuth((s) => s.user?.role);
@@ -39,12 +45,10 @@ export default function Produk() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Load kategori sekali saja
   useEffect(() => {
     getCategories().then(setCategories).catch(() => {});
   }, []);
 
-  // Load produk dengan debounce saat search berubah
   useEffect(() => {
     setLoading(true);
     const timer = setTimeout(() => {
@@ -99,8 +103,10 @@ export default function Produk() {
       const payload = { ...form, category_id: form.category_id || null };
       if (editing) {
         await updateProduct(editing.id, payload);
+        toast.success('Produk diperbarui', `${form.nama} berhasil disimpan.`);
       } else {
         await createProduct(payload);
+        toast.success('Produk ditambahkan', `${form.nama} berhasil ditambahkan.`);
       }
       setModalOpen(false);
       refresh();
@@ -112,26 +118,37 @@ export default function Produk() {
   }
 
   async function handleDelete(p: Product) {
-    if (!confirm(`Hapus produk "${p.nama}"?`)) return;
+    const ok = await confirmDialog({
+      title: `Hapus produk "${p.nama}"?`,
+      message: 'Produk yang dihapus tidak dapat dikembalikan.',
+      confirmText: 'Ya, hapus',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteProduct(p.id);
+      toast.success('Produk dihapus', `${p.nama} berhasil dihapus.`);
       refresh();
     } catch (err: any) {
-      alert(err.response?.data?.message ?? 'Gagal menghapus.');
+      toast.error('Gagal menghapus', err.response?.data?.message);
     }
   }
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Produk</h1>
-          <p className="text-sm text-zinc-500">Kelola data produk & harga</p>
+          <h1 className="text-xl font-bold text-ink">Produk</h1>
+          <p className="text-sm text-muted mt-0.5">Kelola data produk & harga.</p>
         </div>
         {izin.kelolaProduk && (
           <button
             onClick={openCreate}
-            className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold rounded-lg px-4 py-2 text-sm transition"
+            className="flex items-center gap-2 text-white font-semibold rounded-lg px-4 py-2.5 text-sm transition"
+            style={{ backgroundColor: '#234C6A' }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1e435e')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#234C6A')}
           >
             <Plus className="w-4 h-4" />
             Tambah Produk
@@ -140,66 +157,101 @@ export default function Produk() {
       </div>
 
       {/* Search */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+      <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Cari produk..."
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-amber-500"
+          className="w-full bg-white border border-line rounded-lg pl-10 pr-4 py-2.5 text-sm text-ink
+            placeholder:text-slate-400 transition
+            focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10"
         />
       </div>
 
+      {/* Content */}
       {loading ? (
-        <p className="text-sm text-zinc-500">Memuat...</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white border border-line rounded-xl p-4 animate-pulse">
+              <div className="h-4 bg-slate-100 rounded w-3/4 mb-2" />
+              <div className="h-3 bg-slate-100 rounded w-1/2 mb-4" />
+              <div className="space-y-2">
+                <div className="h-3 bg-slate-100 rounded" />
+                <div className="h-3 bg-slate-100 rounded" />
+                <div className="h-3 bg-slate-100 rounded w-2/3" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : items.length === 0 ? (
-        <div className="text-center py-12 text-zinc-500">
-          <Package className="w-10 h-10 mx-auto mb-2 opacity-40" />
-          <p className="text-sm">Belum ada produk.</p>
+        <div className="text-center py-16 border border-dashed border-slate-200 rounded-xl bg-slate-50">
+          <div className="w-12 h-12 rounded-full bg-white border border-line flex items-center justify-center mx-auto mb-3 shadow-sm">
+            <Package className="w-5 h-5 text-muted" />
+          </div>
+          <p className="text-sm font-medium text-ink">Belum ada produk</p>
+          <p className="text-xs text-muted mt-1">
+            {izin.kelolaProduk ? 'Klik "Tambah Produk" untuk memulai.' : 'Produk akan muncul di sini.'}
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {items.map((p) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {items.map((p, i) => (
             <motion.div
               key={p.id}
               layout
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-4"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}
+              className="bg-white border border-line rounded-xl p-4 hover:border-slate-300 hover:shadow-sm transition-all group"
             >
-              <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold truncate">{p.nama}</h3>
-                  <p className="text-xs text-zinc-500">{p.category?.nama ?? 'Tanpa kategori'}</p>
+                  <h3 className="text-sm font-semibold text-ink truncate">{p.nama}</h3>
+                  <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-muted font-medium">
+                    {p.category?.nama ?? 'Tanpa kategori'}
+                  </span>
                 </div>
                 {izin.kelolaProduk && (
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => openEdit(p)}
-                      className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-amber-400"
+                      className="p-1.5 rounded-lg text-muted hover:bg-slate-100 hover:text-[#234C6A] transition"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => handleDelete(p)}
-                      className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-red-400"
+                      className="p-1.5 rounded-lg text-muted hover:bg-red-50 hover:text-red-600 transition"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
               </div>
-              <div className="space-y-0.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Harga umum</span>
-                  <span className="text-amber-400 font-medium">{rupiah(p.harga_umum)}</span>
+
+              <div className="space-y-1.5 pt-3 border-t border-line">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">Harga umum</span>
+                  <span className="font-semibold text-ink">{rupiah(p.harga_umum)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Harga mitra</span>
-                  <span className="text-zinc-300">{rupiah(p.harga_mitra)}</span>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">Harga mitra</span>
+                  <span className="font-medium text-ink">{rupiah(p.harga_mitra)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Stok</span>
-                  <span className={p.stok <= p.stok_minimum && p.stok_minimum > 0 ? 'text-red-400' : 'text-zinc-300'}>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">Stok</span>
+                  <span className={`font-semibold ${
+                    p.stok <= p.stok_minimum && p.stok_minimum > 0
+                      ? 'text-amber-600'
+                      : 'text-ink'
+                  }`}>
                     {p.stok} {p.satuan}
+                    {p.stok <= p.stok_minimum && p.stok_minimum > 0 && (
+                      <span className="ml-1 text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">
+                        menipis
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>
@@ -208,7 +260,7 @@ export default function Produk() {
         </div>
       )}
 
-      {/* Modal form */}
+      {/* Modal */}
       <AnimatePresence>
         {modalOpen && (
           <>
@@ -217,47 +269,59 @@ export default function Produk() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setModalOpen(false)}
-              className="fixed inset-0 bg-black/60 z-50"
+              className="fixed inset-0 bg-navy-900/40 backdrop-blur-sm z-[80]"
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl z-50 p-6 max-h-[90vh] overflow-y-auto"
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg
+                bg-white rounded-xl shadow-2xl z-[81] max-h-[90vh] overflow-y-auto"
             >
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold">{editing ? 'Edit Produk' : 'Tambah Produk'}</h2>
+              {/* Modal header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-line sticky top-0 bg-white rounded-t-xl">
+                <h2 className="text-base font-semibold text-ink">
+                  {editing ? 'Edit Produk' : 'Tambah Produk'}
+                </h2>
                 <button
                   onClick={() => setModalOpen(false)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800"
+                  className="p-1.5 rounded-lg text-muted hover:bg-slate-100 transition"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg px-3 py-2 mb-3">
-                  {error}
-                </div>
-              )}
+              <div className="p-6 space-y-4">
+                {error && (
+                  <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2.5">
+                    <span className="shrink-0 mt-0.5">⚠</span>
+                    {error}
+                  </div>
+                )}
 
-              <div className="space-y-3">
+                {/* Nama */}
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Nama Produk *</label>
+                  <label className="block text-xs font-medium text-muted mb-1.5">
+                    Nama Produk <span className="text-red-500">*</span>
+                  </label>
                   <input
                     value={form.nama}
                     onChange={(e) => setField('nama', e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                    autoFocus
+                    placeholder="Contoh: Oli Mesin 1L"
+                    className={inputCls}
                   />
                 </div>
 
+                {/* Kategori & Satuan */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Kategori</label>
+                    <label className="block text-xs font-medium text-muted mb-1.5">Kategori</label>
                     <select
                       value={form.category_id ?? ''}
                       onChange={(e) => setField('category_id', e.target.value || null)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                      className={inputCls}
                     >
                       <option value="">Tanpa kategori</option>
                       {categories.map((c) => (
@@ -266,83 +330,96 @@ export default function Produk() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Satuan</label>
+                    <label className="block text-xs font-medium text-muted mb-1.5">Satuan</label>
                     <input
                       value={form.satuan}
                       onChange={(e) => setField('satuan', e.target.value)}
                       placeholder="pcs, botol, liter"
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                      className={inputCls}
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Harga Umum *</label>
-                    <input
-                      type="number"
-                      value={form.harga_umum || ''}
-                      onChange={(e) => setField('harga_umum', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Harga Mitra *</label>
-                    <input
-                      type="number"
-                      value={form.harga_mitra || ''}
-                      onChange={(e) => setField('harga_mitra', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Harga Beli</label>
-                    <input
-                      type="number"
-                      value={form.harga_beli || ''}
-                      onChange={(e) => setField('harga_beli', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Stok</label>
-                    <input
-                      type="number"
-                      value={form.stok || ''}
-                      onChange={(e) => setField('stok', parseInt(e.target.value) || 0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Stok Min</label>
-                    <input
-                      type="number"
-                      value={form.stok_minimum || ''}
-                      onChange={(e) => setField('stok_minimum', parseInt(e.target.value) || 0)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-
+                {/* Harga */}
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">SKU (opsional)</label>
+                  <label className="block text-xs font-medium text-muted mb-1.5">Harga</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { label: 'Umum', key: 'harga_umum' as const },
+                      { label: 'Mitra', key: 'harga_mitra' as const },
+                      { label: 'Beli', key: 'harga_beli' as const },
+                    ].map((h) => (
+                      <div key={h.key}>
+                        <label className="block text-[10px] text-muted mb-1">{h.label}</label>
+                        <input
+                          type="number"
+                          value={form[h.key] || ''}
+                          onChange={(e) => setField(h.key, parseFloat(e.target.value) || 0)}
+                          className={inputCls}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Stok */}
+                <div>
+                  <label className="block text-xs font-medium text-muted mb-1.5">Stok</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'Stok saat ini', key: 'stok' as const, isInt: true },
+                      { label: 'Stok minimum', key: 'stok_minimum' as const, isInt: true },
+                    ].map((s) => (
+                      <div key={s.key}>
+                        <label className="block text-[10px] text-muted mb-1">{s.label}</label>
+                        <input
+                          type="number"
+                          value={form[s.key] || ''}
+                          onChange={(e) => setField(s.key, parseInt(e.target.value) || 0)}
+                          className={inputCls}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SKU */}
+                <div>
+                  <label className="block text-xs font-medium text-muted mb-1.5">
+                    SKU <span className="text-slate-400">(opsional)</span>
+                  </label>
                   <input
                     value={form.sku ?? ''}
                     onChange={(e) => setField('sku', e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                    placeholder="Kode produk unik"
+                    className={inputCls}
                   />
                 </div>
 
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold rounded-lg py-2.5 text-sm transition disabled:opacity-50"
-                >
-                  {saving ? 'Menyimpan...' : 'Simpan'}
-                </button>
+                {/* Submit */}
+                <div className="pt-2 flex gap-2">
+                  <button
+                    onClick={() => setModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-lg border border-line text-sm font-medium text-muted hover:bg-slate-50 transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white transition disabled:opacity-50"
+                    style={{ backgroundColor: '#234C6A' }}
+                    onMouseEnter={(e) => !saving && (e.currentTarget.style.backgroundColor = '#1e435e')}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#234C6A')}
+                  >
+                    {saving
+                      ? <span className="flex items-center justify-center gap-2">
+                          <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Menyimpan...
+                        </span>
+                      : 'Simpan'}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </>

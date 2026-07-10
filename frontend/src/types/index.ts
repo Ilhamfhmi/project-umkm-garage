@@ -18,6 +18,7 @@ export interface Category {
 export interface Product {
   id: string;
   category_id: string | null;
+  brand_id: string | null;
   nama: string;
   sku: string | null;
   satuan: string;
@@ -27,7 +28,8 @@ export interface Product {
   harga_umum: string;
   harga_mitra: string;
   is_active: boolean;
-  category?: Category | null;
+  category?: { id: string; nama: string } | null;
+  brand?: { id: string; nama: string } | null;
 }
 
 export interface LoginResponse {

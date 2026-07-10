@@ -4,7 +4,7 @@ import type { Product } from '../types';
 export interface CartItem {
   product: Product;
   qty: number;
-  harga: number; // harga sesuai tipe (umum/mitra) saat ditambahkan
+  harga: number;
 }
 
 interface CartState {

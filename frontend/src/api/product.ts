@@ -1,15 +1,9 @@
 import client from './client';
 import type { Product } from '../types';
 
-export async function searchProducts(search: string): Promise<Product[]> {
-  const { data } = await client.get<Product[]>('/products', {
-    params: search ? { search } : {},
-  });
-  return data;
-}
-
 export interface ProductPayload {
   category_id?: string | null;
+  brand_id?: string | null;
   nama: string;
   sku?: string | null;
   satuan?: string;
@@ -19,6 +13,21 @@ export interface ProductPayload {
   harga_umum: number;
   harga_mitra: number;
   is_active?: boolean;
+}
+
+export async function searchProducts(
+  search?: string,
+  categoryId?: string,
+  brandId?: string
+): Promise<Product[]> {
+  const { data } = await client.get<Product[]>('/products', {
+    params: {
+      ...(search     ? { search }                  : {}),
+      ...(categoryId ? { category_id: categoryId } : {}),
+      ...(brandId    ? { brand_id: brandId }        : {}),
+    },
+  });
+  return data;
 }
 
 export async function createProduct(payload: ProductPayload) {

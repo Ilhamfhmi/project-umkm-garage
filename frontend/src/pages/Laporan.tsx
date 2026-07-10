@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  TrendingUp, Receipt, Percent, Trophy, Calendar,
+  TrendingUp, Receipt, Tag, Trophy,
+  Calendar, Clock, ArrowDownRight,
 } from 'lucide-react';
 import {
   getLaporanPenjualan, getProdukTerlaris,
@@ -17,10 +18,13 @@ function firstDayOfMonth() {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
 }
 
+const inputCls = `w-full bg-white border border-line rounded-lg pl-10 pr-3 py-2.5 text-sm text-ink
+  placeholder:text-slate-400 transition
+  focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10`;
+
 export default function Laporan() {
   const [from, setFrom] = useState(firstDayOfMonth());
   const [to, setTo] = useState(todayStr());
-
   const [laporan, setLaporan] = useState<LaporanPenjualan | null>(null);
   const [terlaris, setTerlaris] = useState<ProdukTerlaris[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,154 +48,244 @@ export default function Laporan() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const maxTerlaris = terlaris.length > 0 ? terlaris[0].total_terjual : 1;
+
   const cards = laporan
     ? [
         {
           label: 'Total Omzet',
           value: rupiah(laporan.ringkasan.total_omzet),
+          sub: 'Bersih setelah retur',
           icon: TrendingUp,
+          color: 'text-emerald-600',
+          bg: 'bg-emerald-50',
         },
         {
           label: 'Jumlah Transaksi',
           value: String(laporan.ringkasan.jumlah_transaksi),
+          sub: 'Total transaksi selesai',
           icon: Receipt,
+          color: 'text-blue-600',
+          bg: 'bg-blue-50',
         },
         {
           label: 'Total Diskon',
           value: rupiah(laporan.ringkasan.total_diskon),
-          icon: Percent,
+          sub: 'Diskon yang diberikan',
+          icon: Tag,
+          color: 'text-violet-600',
+          bg: 'bg-violet-50',
+        },
+        {
+          label: 'Total Retur',
+          value: rupiah(laporan.ringkasan.total_retur ?? 0),
+          sub: 'Nilai barang diretur',
+          icon: ArrowDownRight,
+          color: 'text-amber-600',
+          bg: 'bg-amber-50',
         },
       ]
     : [];
 
-  const maxTerlaris = terlaris.length > 0 ? terlaris[0].total_terjual : 1;
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div>
-        <h1 className="text-xl font-bold">Laporan</h1>
-        <p className="text-sm text-zinc-500">Analisis penjualan per periode</p>
+        <h1 className="text-xl font-bold text-ink">Laporan</h1>
+        <p className="text-sm text-muted mt-0.5">Analisis penjualan per periode.</p>
       </div>
 
       {/* Filter periode */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-end gap-3">
+      <div className="bg-white border border-line rounded-xl p-5 flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
-          <label className="block text-xs text-zinc-400 mb-1">Dari Tanggal</label>
+          <label className="block text-xs font-medium text-muted mb-1.5">Dari Tanggal</label>
           <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+            <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             <input
               type="date"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-10 pr-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+              className={inputCls}
             />
           </div>
         </div>
         <div className="flex-1">
-          <label className="block text-xs text-zinc-400 mb-1">Sampai Tanggal</label>
+          <label className="block text-xs font-medium text-muted mb-1.5">Sampai Tanggal</label>
           <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+            <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             <input
               type="date"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-10 pr-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+              className={inputCls}
             />
           </div>
         </div>
         <button
           onClick={load}
-          className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold rounded-lg px-6 py-2 text-sm transition"
+          disabled={loading}
+          className="px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition disabled:opacity-60 shrink-0"
+          style={{ backgroundColor: '#234C6A' }}
+          onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = '#1e435e')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#234C6A')}
         >
-          Tampilkan
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Memuat...
+            </span>
+          ) : 'Tampilkan'}
         </button>
       </div>
 
       {loading ? (
-        <p className="text-sm text-zinc-500">Memuat...</p>
+        /* Skeleton */
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-white border border-line rounded-xl p-4 animate-pulse">
+                <div className="h-3 bg-slate-100 rounded w-24 mb-4" />
+                <div className="h-7 bg-slate-100 rounded w-32 mb-1" />
+                <div className="h-3 bg-slate-100 rounded w-20" />
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white border border-line rounded-xl h-64 animate-pulse" />
+            <div className="bg-white border border-line rounded-xl h-64 animate-pulse" />
+          </div>
+        </div>
       ) : (
         <>
-          {/* Kartu ringkasan */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {cards.map((c, i) => (
               <motion.div
                 key={c.label}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="bg-zinc-900 border border-zinc-800 rounded-xl p-4"
+                transition={{ delay: i * 0.06 }}
+                className="bg-white border border-line rounded-xl p-4 hover:border-slate-300 hover:shadow-sm transition-all"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs text-zinc-500">{c.label}</span>
-                  <c.icon className="w-4 h-4 text-amber-400" />
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-xs font-medium text-muted">{c.label}</span>
+                  <div className={`w-8 h-8 rounded-lg ${c.bg} ${c.color} flex items-center justify-center shrink-0`}>
+                    <c.icon className="w-4 h-4" />
+                  </div>
                 </div>
-                <div className="text-lg font-bold truncate">{c.value}</div>
+                <div className="text-xl font-bold text-ink tracking-tight truncate">{c.value}</div>
+                <div className="text-xs text-muted mt-1">{c.sub}</div>
               </motion.div>
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Produk terlaris */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Trophy className="w-4 h-4 text-amber-400" />
-                <h2 className="text-sm font-semibold">Produk Terlaris</h2>
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25 }}
+              className="bg-white border border-line rounded-xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-line flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-500" />
+                <h2 className="text-sm font-semibold text-ink">Produk Terlaris</h2>
               </div>
+
               {terlaris.length === 0 ? (
-                <p className="text-sm text-zinc-500">Belum ada data.</p>
+                <div className="py-12 text-center">
+                  <Trophy className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                  <p className="text-sm text-muted">Belum ada data penjualan.</p>
+                </div>
               ) : (
-                <div className="space-y-3">
+                <div className="p-5 space-y-4">
                   {terlaris.map((p, i) => (
                     <div key={i}>
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="truncate">{i + 1}. {p.nama}</span>
-                        <span className="text-zinc-400 shrink-0 ml-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                            style={{ backgroundColor: i === 0 ? '#234C6A' : i === 1 ? '#64748b' : '#94a3b8' }}
+                          >
+                            {i + 1}
+                          </span>
+                          <span className="text-sm font-medium text-ink truncate">{p.nama}</span>
+                        </div>
+                        <span className="text-xs text-muted shrink-0 ml-2">
                           {p.total_terjual} terjual
                         </span>
                       </div>
-                      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${(p.total_terjual / maxTerlaris) * 100}%` }}
-                          transition={{ duration: 0.5, delay: i * 0.05 }}
-                          className="h-full bg-amber-500 rounded-full"
+                          transition={{ duration: 0.6, delay: i * 0.06 }}
+                          className="h-full rounded-full"
+                          style={{ backgroundColor: i === 0 ? '#234C6A' : '#94a3b8' }}
                         />
                       </div>
-                      <div className="text-xs text-zinc-500 mt-0.5">
-                        {rupiah(p.total_omzet)}
-                      </div>
+                      <div className="text-xs text-muted mt-1">{rupiah(p.total_omzet)}</div>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+            </motion.div>
 
             {/* Daftar transaksi */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-              <h2 className="text-sm font-semibold mb-3">Daftar Transaksi</h2>
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="bg-white border border-line rounded-xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-line flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-muted" />
+                  <h2 className="text-sm font-semibold text-ink">Daftar Transaksi</h2>
+                </div>
+                <span className="text-xs text-muted">
+                  {laporan?.transaksi.length ?? 0} transaksi
+                </span>
+              </div>
+
               {!laporan || laporan.transaksi.length === 0 ? (
-                <p className="text-sm text-zinc-500">Tidak ada transaksi di periode ini.</p>
+                <div className="py-12 text-center">
+                  <Receipt className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                  <p className="text-sm text-muted">Tidak ada transaksi di periode ini.</p>
+                </div>
               ) : (
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                  {laporan.transaksi.map((t) => (
-                    <div
+                <div className="divide-y divide-line max-h-[50vh] overflow-y-auto">
+                  {laporan.transaksi.map((t, i) => (
+                    <motion.div
                       key={t.id}
-                      className="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0"
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.3 + i * 0.04 }}
+                      className="px-5 py-3.5 flex items-center justify-between hover:bg-slate-50 transition"
                     >
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium">{t.invoice_no}</div>
-                        <div className="text-xs text-zinc-500">
-                          {t.kasir?.name} · {tanggal(t.created_at)}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0"
+                          style={{ backgroundColor: '#234C6A' }}
+                        >
+                          {t.kasir?.name?.charAt(0) ?? 'K'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-ink">{t.invoice_no}</div>
+                          <div className="text-xs text-muted flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {t.kasir?.name} · {tanggal(t.created_at)}
+                          </div>
                         </div>
                       </div>
-                      <div className="text-sm font-semibold text-amber-400 shrink-0 ml-2">
+                      <div className="text-sm font-bold text-ink shrink-0 ml-2">
                         {rupiah(t.total)}
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               )}
-            </div>
+            </motion.div>
           </div>
         </>
       )}

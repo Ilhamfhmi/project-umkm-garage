@@ -10,15 +10,19 @@ class ProductController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Product::with('category');
+        $query = Product::with(['category:id,nama', 'brand:id,nama'])
+            ->where('is_active', true);
 
-        // Filter opsional: ?search=oli & ?category_id=xxx
         if ($request->filled('search')) {
             $query->where('nama', 'ilike', '%' . $request->search . '%');
         }
 
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->category_id);
+        }
+
+        if ($request->filled('brand_id')) {
+            $query->where('brand_id', $request->brand_id);
         }
 
         return $query->orderBy('nama')->get();
@@ -28,6 +32,7 @@ class ProductController extends Controller
     {
         $data = $request->validate([
             'category_id'  => ['nullable', 'exists:categories,id'],
+            'brand_id'     => ['nullable', 'exists:brands,id'],
             'nama'         => ['required', 'string', 'max:255'],
             'sku'          => ['nullable', 'string', 'max:255', 'unique:products,sku'],
             'satuan'       => ['nullable', 'string', 'max:50'],
@@ -41,18 +46,19 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
-        return response()->json($product->load('category'), 201);
+        return response()->json($product->load(['category:id,nama', 'brand:id,nama']), 201);
     }
 
     public function show(Product $product)
     {
-        return $product->load('category');
+        return $product->load(['category:id,nama', 'brand:id,nama']);
     }
 
     public function update(Request $request, Product $product)
     {
         $data = $request->validate([
             'category_id'  => ['nullable', 'exists:categories,id'],
+            'brand_id'     => ['nullable', 'exists:brands,id'],
             'nama'         => ['required', 'string', 'max:255'],
             'sku'          => ['nullable', 'string', 'max:255', 'unique:products,sku,' . $product->id],
             'satuan'       => ['nullable', 'string', 'max:50'],
@@ -66,7 +72,7 @@ class ProductController extends Controller
 
         $product->update($data);
 
-        return response()->json($product->load('category'));
+        return response()->json($product->load(['category:id,nama', 'brand:id,nama']));
     }
 
     public function destroy(Product $product)
