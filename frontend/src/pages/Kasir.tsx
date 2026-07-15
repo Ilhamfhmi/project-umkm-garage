@@ -29,7 +29,6 @@ interface SuccessData {
   kembalian: number;
 }
 
-// Ikon per kategori
 const CAT_ICON: Record<string, any> = {
   'Oli Mesin': Droplets,
   'Oli Gear':  Zap,
@@ -37,15 +36,13 @@ const CAT_ICON: Record<string, any> = {
   'ATF & CVT': Package,
 };
 
-// Warna per kategori
 const CAT_COLOR: Record<string, { bg: string; text: string; light: string }> = {
-  'Oli Mesin': { bg: '#234C6A', text: 'white',    light: '#EEF3F8' },
-  'Oli Gear':  { bg: '#0F766E', text: 'white',    light: '#F0FDFA' },
-  'Ban':       { bg: '#7C3AED', text: 'white',    light: '#F5F3FF' },
-  'ATF & CVT': { bg: '#B45309', text: 'white',    light: '#FFFBEB' },
+  'Oli Mesin': { bg: '#234C6A', text: 'white', light: '#EEF3F8' },
+  'Oli Gear':  { bg: '#0F766E', text: 'white', light: '#F0FDFA' },
+  'Ban':       { bg: '#7C3AED', text: 'white', light: '#F5F3FF' },
+  'ATF & CVT': { bg: '#B45309', text: 'white', light: '#FFFBEB' },
 };
 
-// Sub-filter per kategori
 const SUB_FILTERS: Record<string, string[]> = {
   'Oli Mesin': ['Semua', '1L ke bawah', '4L - 5L', '10L ke atas'],
   'Oli Gear':  ['Semua'],
@@ -65,33 +62,29 @@ export default function Kasir() {
   const user = useAuth((s) => s.user);
   const cart = useCart();
 
-  // ── Navigasi ──
-  const [level, setLevel] = useState<Level>('kategori');
+  const [level,      setLevel]      = useState<Level>('kategori');
   const [categories, setCategories] = useState<Category[]>([]);
-  const [brands, setBrands]         = useState<Brand[]>([]);
-  const [products, setProducts]     = useState<Product[]>([]);
+  const [brands,     setBrands]     = useState<Brand[]>([]);
+  const [products,   setProducts]   = useState<Product[]>([]);
 
   const [activeCat,   setActiveCat]   = useState<Category | null>(null);
   const [activeBrand, setActiveBrand] = useState<Brand | null>(null);
   const [activeSub,   setActiveSub]   = useState('Semua');
 
-  // ── Search ──
   const [search,     setSearch]     = useState('');
   const [searchMode, setSearchMode] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // ── Loading ──
   const [loadingCat,     setLoadingCat]     = useState(true);
   const [loadingBrand,   setLoadingBrand]   = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(false);
 
-  // ── Checkout ──
-  const [cartOpen,      setCartOpen]      = useState(false);
-  const [checkoutOpen,  setCheckoutOpen]  = useState(false);
-  const [diskon,        setDiskon]        = useState(0);
-  const [bayar,         setBayar]         = useState(0);
-  const [paying,        setPaying]        = useState(false);
-  const [success,       setSuccess]       = useState<SuccessData | null>(null);
+  const [cartOpen,     setCartOpen]     = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [diskon,       setDiskon]       = useState(0);
+  const [bayar,        setBayar]        = useState(0);
+  const [paying,       setPaying]       = useState(false);
+  const [success,      setSuccess]      = useState<SuccessData | null>(null);
 
   // Load kategori
   useEffect(() => {
@@ -114,35 +107,48 @@ export default function Kasir() {
     if (!activeBrand || level !== 'produk') return;
     setLoadingProduct(true);
 
-    // Sub-filter: filter nama produk
-    const searchQ = activeSub === 'Semua' ? ''
-      : activeSub === 'ATF'         ? 'ATF'
-      : activeSub === 'CVT'         ? 'CVT'
-      : activeSub === 'Ban Dalam'   ? 'Dalam'
-      : activeSub === 'Ban Luar'    ? 'Luar'
-      : '';
+    const searchQ =
+      activeSub === 'ATF'       ? 'ATF'    :
+      activeSub === 'CVT'       ? 'CVT'    :
+      activeSub === 'Ban Dalam' ? 'Dalam'  :
+      activeSub === 'Ban Luar'  ? 'Luar'   : '';
 
-    const subKatQ = activeSub === '1L ke bawah' ? '1L ke bawah'
-      : activeSub === '4L - 5L'    ? '4L - 5L'
-      : activeSub === '10L ke atas'? '10L ke atas'
-      : undefined;
+    const subKatQ =
+      activeSub === '1L ke bawah'  ? '1L ke bawah'  :
+      activeSub === '4L - 5L'      ? '4L - 5L'      :
+      activeSub === '10L ke atas'  ? '10L ke atas'  : undefined;
 
     searchProducts(searchQ, activeCat?.id, activeBrand.id, subKatQ)
       .then(setProducts)
       .finally(() => setLoadingProduct(false));
   }, [activeBrand, activeSub, level]);
 
+  // Refetch produk saat window fokus (harga selalu fresh)
+  useEffect(() => {
+    function onFocus() {
+      if (level === 'produk' && activeBrand) {
+        searchProducts('', activeCat?.id, activeBrand.id)
+          .then(setProducts);
+      }
+    }
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [level, activeBrand, activeCat]);
+
   // Search mode
   useEffect(() => {
-    if (!searchMode || !search.trim()) { if (searchMode) setProducts([]); return; }
+    if (!searchMode) { if (search) setProducts([]); return; }
+    if (!search.trim()) { setProducts([]); return; }
     setLoadingProduct(true);
     const t = setTimeout(() => {
-      searchProducts(search).then(setProducts).finally(() => setLoadingProduct(false));
+      searchProducts(search)
+        .then(setProducts)
+        .finally(() => setLoadingProduct(false));
     }, 300);
     return () => clearTimeout(t);
   }, [search, searchMode]);
 
-  // ── Navigasi functions ──
+  // ── Navigasi ──
   function pilihKategori(cat: Category) {
     setActiveCat(cat);
     setActiveBrand(null);
@@ -156,6 +162,11 @@ export default function Kasir() {
     setActiveSub('Semua');
     setProducts([]);
     setLevel('produk');
+    // Force fetch fresh — harga selalu dari DB terbaru
+    setLoadingProduct(true);
+    searchProducts('', activeCat?.id, b.id)
+      .then(setProducts)
+      .finally(() => setLoadingProduct(false));
   }
 
   function backTo(l: Level) {
@@ -187,32 +198,41 @@ export default function Kasir() {
       toast.error('Stok tidak cukup', `Maksimal ${p.stok} ${p.satuan}.`);
       return;
     }
-    cart.addItem(p, 1);  // ← qty = 1, harga dihitung otomatis di store
+    cart.addItem(p, 1);
     toast.success(`${p.nama} ditambahkan`, 'ke keranjang');
   }
-  
-  const subtotal = cart.subtotal();
-  const total    = Math.max(0, subtotal - diskon);
+
+  const subtotal  = cart.subtotal();
+  const total     = Math.max(0, subtotal - diskon);
   const kembalian = bayar - total;
 
   const subFilters = activeCat ? (SUB_FILTERS[activeCat.nama] ?? ['Semua']) : ['Semua'];
-  const catColor   = activeCat ? (CAT_COLOR[activeCat.nama] ?? { bg: '#234C6A', text: 'white', light: '#EEF3F8' }) : null;
+  const catColor   = activeCat
+    ? (CAT_COLOR[activeCat.nama] ?? { bg: '#234C6A', text: 'white', light: '#EEF3F8' })
+    : null;
 
   async function handleBayar() {
-    if (bayar < total) { toast.error('Uang kurang', `Kurang ${rupiah(total - bayar)}`); return; }
+    if (bayar < total) {
+      toast.error('Uang kurang', `Kurang ${rupiah(total - bayar)}`);
+      return;
+    }
     setPaying(true);
     try {
       const snapshot = cart.items.map((it) => ({
-        nama: it.product.nama, qty: it.qty, harga: it.harga, subtotal: it.harga * it.qty,
+        nama: it.product.nama, qty: it.qty,
+        harga: it.harga, subtotal: it.harga * it.qty,
       }));
       const res = await checkout({
         tipe_harga: cart.tipeHarga, bayar, diskon,
         items: cart.items.map((it) => ({ product_id: it.product.id, qty: it.qty })),
       });
       setSuccess({
-        invoice_no: res.invoice_no, created_at: res.created_at ?? new Date().toISOString(),
-        kasir: user?.name, tipe_harga: cart.tipeHarga, items: snapshot,
-        subtotal, diskon, total, bayar, kembalian: parseFloat(res.kembalian),
+        invoice_no: res.invoice_no,
+        created_at: res.created_at ?? new Date().toISOString(),
+        kasir: user?.name,
+        tipe_harga: cart.tipeHarga,
+        items: snapshot, subtotal, diskon, total, bayar,
+        kembalian: parseFloat(res.kembalian),
       });
       cart.clear();
       toast.success('Transaksi berhasil', res.invoice_no);
@@ -240,8 +260,6 @@ export default function Kasir() {
 
       {/* ══ TOP BAR ══ */}
       <div className="bg-white border-b border-line px-4 lg:px-6 py-3 flex items-center gap-3 shrink-0">
-
-        {/* Back button / breadcrumb */}
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           {!searchMode && level !== 'kategori' && (
             <button
@@ -253,8 +271,6 @@ export default function Kasir() {
               <span className="text-xs font-medium">Kembali</span>
             </button>
           )}
-
-          {/* Breadcrumb */}
           {!searchMode && (
             <div className="flex items-center gap-1 text-xs text-muted min-w-0 overflow-hidden">
               <button
@@ -282,8 +298,6 @@ export default function Kasir() {
               )}
             </div>
           )}
-
-          {/* Search input */}
           {searchMode && (
             <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -321,7 +335,6 @@ export default function Kasir() {
           <button
             onClick={enterSearch}
             className="p-2 rounded-lg text-muted hover:bg-slate-100 hover:text-ink transition shrink-0"
-            title="Cari produk"
           >
             <Search className="w-4 h-4" />
           </button>
@@ -334,7 +347,7 @@ export default function Kasir() {
           </button>
         )}
 
-        {/* Cart */}
+        {/* Keranjang */}
         <button
           onClick={() => setCartOpen(true)}
           className="relative flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold transition shrink-0"
@@ -353,7 +366,7 @@ export default function Kasir() {
         </button>
       </div>
 
-      {/* Sub-filter bar (hanya di level produk) */}
+      {/* Sub-filter bar */}
       {!searchMode && level === 'produk' && subFilters.length > 1 && (
         <div className="bg-white border-b border-line px-4 lg:px-6 py-2.5 flex items-center gap-2 shrink-0 overflow-x-auto scrollbar-hide">
           <Filter className="w-3.5 h-3.5 text-muted shrink-0" />
@@ -379,7 +392,7 @@ export default function Kasir() {
       <div className="flex-1 overflow-y-auto">
         <AnimatePresence mode="wait">
 
-          {/* ── Search results ── */}
+          {/* Search results */}
           {searchMode && (
             <motion.div
               key="search"
@@ -393,9 +406,7 @@ export default function Kasir() {
                   {loadingProduct ? 'Mencari...' : `${products.length} hasil untuk "${search}"`}
                 </p>
               )}
-              {loadingProduct ? (
-                <ProductSkeleton />
-              ) : products.length === 0 ? (
+              {loadingProduct ? <ProductSkeleton /> : products.length === 0 ? (
                 <EmptyState
                   icon={<Search className="w-8 h-8 text-slate-300" />}
                   title={search.trim() ? 'Produk tidak ditemukan' : 'Ketik untuk mencari produk'}
@@ -407,7 +418,7 @@ export default function Kasir() {
             </motion.div>
           )}
 
-          {/* ── Level 1: Kategori ── */}
+          {/* Level 1: Kategori */}
           {!searchMode && level === 'kategori' && (
             <motion.div
               key="kategori"
@@ -429,8 +440,8 @@ export default function Kasir() {
               ) : (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {categories.map((cat, i) => {
-                    const Icon   = CAT_ICON[cat.nama] ?? Package;
-                    const color  = CAT_COLOR[cat.nama] ?? { bg: '#234C6A', text: 'white', light: '#EEF3F8' };
+                    const Icon  = CAT_ICON[cat.nama] ?? Package;
+                    const color = CAT_COLOR[cat.nama] ?? { bg: '#234C6A', text: 'white', light: '#EEF3F8' };
                     return (
                       <motion.button
                         key={cat.id}
@@ -441,7 +452,6 @@ export default function Kasir() {
                         className="group bg-white border-2 border-line rounded-2xl p-6 text-left
                           hover:border-slate-300 hover:shadow-lg transition-all duration-200"
                       >
-                        {/* Ikon */}
                         <div
                           className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4
                             group-hover:scale-110 transition-transform duration-200"
@@ -449,12 +459,10 @@ export default function Kasir() {
                         >
                           <Icon className="w-7 h-7" style={{ color: color.text }} />
                         </div>
-
                         <h3 className="font-bold text-ink text-base leading-tight">{cat.nama}</h3>
                         {cat.products_count !== undefined && (
                           <p className="text-xs text-muted mt-1">{cat.products_count} produk</p>
                         )}
-
                         <div className="flex items-center gap-1 mt-3 text-xs font-semibold"
                           style={{ color: color.bg }}>
                           <span>Pilih</span>
@@ -468,7 +476,7 @@ export default function Kasir() {
             </motion.div>
           )}
 
-          {/* ── Level 2: Merek ── */}
+          {/* Level 2: Merek */}
           {!searchMode && level === 'merek' && activeCat && (
             <motion.div
               key="merek"
@@ -477,7 +485,6 @@ export default function Kasir() {
               transition={{ duration: 0.18 }}
               className="p-4 lg:p-6"
             >
-              {/* Header kategori */}
               <div
                 className="rounded-2xl p-5 mb-5 flex items-center gap-4"
                 style={{ backgroundColor: catColor?.light ?? '#EEF3F8' }}
@@ -486,7 +493,10 @@ export default function Kasir() {
                   className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
                   style={{ backgroundColor: catColor?.bg ?? '#234C6A' }}
                 >
-                  {(() => { const Icon = CAT_ICON[activeCat.nama] ?? Package; return <Icon className="w-6 h-6 text-white" />; })()}
+                  {(() => {
+                    const Icon = CAT_ICON[activeCat.nama] ?? Package;
+                    return <Icon className="w-6 h-6 text-white" />;
+                  })()}
                 </div>
                 <div>
                   <h2 className="text-base font-bold text-ink">{activeCat.nama}</h2>
@@ -518,7 +528,6 @@ export default function Kasir() {
                       className="group bg-white border-2 border-line rounded-2xl p-5 text-left
                         hover:border-slate-300 hover:shadow-md transition-all duration-200"
                     >
-                      {/* Avatar merek */}
                       <div
                         className="w-12 h-12 rounded-xl flex items-center justify-center mb-3
                           text-lg font-black group-hover:scale-105 transition-transform"
@@ -526,12 +535,10 @@ export default function Kasir() {
                       >
                         {b.nama.charAt(0)}
                       </div>
-
                       <h3 className="font-bold text-ink text-sm leading-tight">{b.nama}</h3>
                       {b.products_count !== undefined && (
                         <p className="text-[11px] text-muted mt-0.5">{b.products_count} produk</p>
                       )}
-
                       <div className="flex items-center gap-1 mt-2.5 text-[11px] font-semibold"
                         style={{ color: catColor?.bg ?? '#234C6A' }}>
                         <span>Lihat produk</span>
@@ -544,7 +551,7 @@ export default function Kasir() {
             </motion.div>
           )}
 
-          {/* ── Level 3: Produk ── */}
+          {/* Level 3: Produk */}
           {!searchMode && level === 'produk' && activeBrand && (
             <motion.div
               key="produk"
@@ -553,7 +560,6 @@ export default function Kasir() {
               transition={{ duration: 0.18 }}
               className="p-4 lg:p-6"
             >
-              {/* Header merek */}
               <div
                 className="rounded-2xl p-4 mb-4 flex items-center gap-3"
                 style={{ backgroundColor: catColor?.light ?? '#EEF3F8' }}
@@ -571,9 +577,7 @@ export default function Kasir() {
                 <span className="text-xs text-muted shrink-0">{products.length} produk</span>
               </div>
 
-              {loadingProduct ? (
-                <ProductSkeleton />
-              ) : products.length === 0 ? (
+              {loadingProduct ? <ProductSkeleton /> : products.length === 0 ? (
                 <EmptyState
                   icon={<Package className="w-8 h-8 text-slate-300" />}
                   title="Belum ada produk"
@@ -650,7 +654,8 @@ export default function Kasir() {
                         <button
                           onClick={() => {
                             if (it.qty >= it.product.stok) {
-                              toast.error('Stok tidak cukup', `Maks ${it.product.stok}`); return;
+                              toast.error('Stok tidak cukup', `Maks ${it.product.stok}`);
+                              return;
                             }
                             cart.updateQty(it.product.id, it.qty + 1);
                           }}
@@ -750,7 +755,8 @@ export default function Kasir() {
 
                   <div className="flex gap-2 mt-5">
                     <button onClick={resetCheckout}
-                      className="flex-1 py-2.5 rounded-lg border border-line text-sm font-medium text-muted hover:bg-slate-50 transition">
+                      className="flex-1 py-2.5 rounded-lg border border-line text-sm font-medium
+                        text-muted hover:bg-slate-50 transition">
                       Selesai
                     </button>
                     <button className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg
@@ -781,9 +787,13 @@ export default function Kasir() {
 
                     <div>
                       <label className="block text-xs font-medium text-muted mb-1.5">Diskon (Rp)</label>
-                      <input type="number" value={diskon || ''} onChange={(e) => setDiskon(parseInt(e.target.value) || 0)}
-                        placeholder="0" className="w-full border border-line rounded-lg px-3 py-2.5 text-sm text-ink
-                          focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10" />
+                      <input
+                        type="number" value={diskon || ''}
+                        onChange={(e) => setDiskon(parseInt(e.target.value) || 0)}
+                        placeholder="0"
+                        className="w-full border border-line rounded-lg px-3 py-2.5 text-sm text-ink
+                          focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10"
+                      />
                     </div>
 
                     <div className="flex items-center justify-between py-3 border-t border-b border-line">
@@ -793,14 +803,20 @@ export default function Kasir() {
 
                     <div>
                       <label className="block text-xs font-medium text-muted mb-1.5">Uang Bayar</label>
-                      <input type="number" value={bayar || ''} onChange={(e) => setBayar(parseInt(e.target.value) || 0)}
-                        placeholder="0" autoFocus className="w-full border border-line rounded-lg px-3 py-2.5 text-sm text-ink
-                          focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10" />
+                      <input
+                        type="number" value={bayar || ''}
+                        onChange={(e) => setBayar(parseInt(e.target.value) || 0)}
+                        placeholder="0" autoFocus
+                        className="w-full border border-line rounded-lg px-3 py-2.5 text-sm text-ink
+                          focus:outline-none focus:border-[#234C6A] focus:ring-2 focus:ring-[#234C6A]/10"
+                      />
                       <div className="flex gap-2 mt-2">
                         {quickAmounts.map((a) => (
                           <button key={a} onClick={() => setBayar(a)}
                             className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition ${
-                              bayar === a ? 'border-[#234C6A] text-[#234C6A] bg-[#234C6A]/5' : 'border-line text-muted hover:border-slate-300'
+                              bayar === a
+                                ? 'border-[#234C6A] text-[#234C6A] bg-[#234C6A]/5'
+                                : 'border-line text-muted hover:border-slate-300'
                             }`}>
                             {rupiah(a)}
                           </button>
@@ -809,15 +825,23 @@ export default function Kasir() {
                     </div>
 
                     {bayar > 0 && (
-                      <div className={`rounded-xl p-3 text-center ${kembalian < 0 ? 'bg-red-50 border border-red-200' : 'bg-emerald-50 border border-emerald-200'}`}>
-                        <div className="text-xs text-muted mb-0.5">{kembalian < 0 ? 'Kurang' : 'Kembalian'}</div>
+                      <div className={`rounded-xl p-3 text-center ${
+                        kembalian < 0
+                          ? 'bg-red-50 border border-red-200'
+                          : 'bg-emerald-50 border border-emerald-200'
+                      }`}>
+                        <div className="text-xs text-muted mb-0.5">
+                          {kembalian < 0 ? 'Kurang' : 'Kembalian'}
+                        </div>
                         <div className={`text-xl font-bold ${kembalian < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                           {rupiah(Math.abs(kembalian))}
                         </div>
                       </div>
                     )}
 
-                    <button onClick={handleBayar} disabled={paying || bayar < total}
+                    <button
+                      onClick={handleBayar}
+                      disabled={paying || bayar < total}
                       className="w-full py-3 rounded-lg text-white font-semibold text-sm transition disabled:opacity-50"
                       style={{ backgroundColor: '#234C6A' }}
                       onMouseEnter={(e) => !paying && bayar >= total && (e.currentTarget.style.backgroundColor = '#1e435e')}
@@ -869,12 +893,11 @@ function ProductGrid({
             disabled={habis}
             className={`relative bg-white rounded-xl p-3 text-left transition-all border-2 group ${
               habis   ? 'opacity-50 cursor-not-allowed border-line' :
-              inCart  ? 'shadow-md ring-1'  :
+              inCart  ? 'shadow-md' :
               'border-line hover:border-slate-300 hover:shadow-md'
             }`}
             style={inCart ? { borderColor: accentColor, boxShadow: `0 0 0 1px ${accentColor}30` } : {}}
           >
-            {/* Badge qty */}
             {inCart && (
               <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full text-white
                 text-[10px] font-bold flex items-center justify-center shadow-md z-10"
@@ -882,28 +905,22 @@ function ProductGrid({
                 {inCart.qty}
               </span>
             )}
-
-            {/* Badge menipis */}
             {menipis && (
               <span className="absolute -top-1.5 -left-1.5 px-1.5 py-0.5 rounded-full
                 bg-amber-500 text-white text-[9px] font-bold z-10">
                 Menipis
               </span>
             )}
-
-            {/* Nama */}
-            <div className={`text-xs font-semibold leading-tight line-clamp-2 mb-1.5 min-h-[2.5rem] transition-colors
-              ${inCart ? '' : 'text-ink group-hover:text-[#234C6A]'}`}
+            <div className={`text-xs font-semibold leading-tight line-clamp-2 mb-1.5 min-h-[2.5rem]
+              transition-colors ${inCart ? '' : 'text-ink group-hover:text-[#234C6A]'}`}
               style={inCart ? { color: accentColor } : {}}>
               {p.nama}
             </div>
-
-            {/* Stok */}
-            <div className={`text-[10px] mb-2 ${habis ? 'text-red-500' : menipis ? 'text-amber-600' : 'text-muted'}`}>
+            <div className={`text-[10px] mb-2 ${
+              habis ? 'text-red-500' : menipis ? 'text-amber-600' : 'text-muted'
+            }`}>
               {habis ? 'Stok habis' : `Stok: ${p.stok} ${p.satuan}`}
             </div>
-
-            {/* Harga + tombol */}
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold" style={{ color: accentColor }}>
                 {rupiah(harga)}
@@ -936,7 +953,9 @@ function ProductSkeleton() {
   );
 }
 
-function EmptyState({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+function EmptyState({ icon, title, desc }: {
+  icon: React.ReactNode; title: string; desc: string;
+}) {
   return (
     <div className="flex flex-col items-center justify-center h-48 text-center">
       <div className="w-16 h-16 rounded-2xl bg-white border border-line flex items-center justify-center mx-auto mb-4 shadow-sm">
