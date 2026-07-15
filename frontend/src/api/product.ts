@@ -18,13 +18,15 @@ export interface ProductPayload {
 export async function searchProducts(
   search?: string,
   categoryId?: string,
-  brandId?: string
+  brandId?: string,
+  subKategori?: string
 ): Promise<Product[]> {
   const { data } = await client.get<Product[]>('/products', {
     params: {
-      ...(search     ? { search }                  : {}),
-      ...(categoryId ? { category_id: categoryId } : {}),
-      ...(brandId    ? { brand_id: brandId }        : {}),
+      ...(search       ? { search }                      : {}),
+      ...(categoryId   ? { category_id: categoryId }     : {}),
+      ...(brandId      ? { brand_id: brandId }           : {}),
+      ...(subKategori  ? { sub_kategori: subKategori }   : {}),
     },
   });
   return data;

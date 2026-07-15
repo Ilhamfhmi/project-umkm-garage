@@ -10,8 +10,9 @@ class Product extends Model
     use HasUuids;
 
     protected $fillable = [
-        'category_id', 'nama', 'sku', 'satuan', 'stok', 'stok_minimum',
-        'harga_beli', 'harga_umum', 'harga_mitra', 'is_active',
+        'id', 'category_id', 'brand_id', 'nama', 'sku', 'satuan',
+        'stok', 'stok_minimum', 'harga_beli', 'harga_umum', 'harga_mitra',
+        'is_active', 'sub_kategori',
     ];
 
     protected $casts = [

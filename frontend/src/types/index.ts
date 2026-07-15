@@ -19,6 +19,7 @@ export interface Product {
   id: string;
   category_id: string | null;
   brand_id: string | null;
+  sub_kategori: string | null;
   nama: string;
   sku: string | null;
   satuan: string;

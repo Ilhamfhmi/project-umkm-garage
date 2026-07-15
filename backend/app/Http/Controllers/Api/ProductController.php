@@ -16,13 +16,14 @@ class ProductController extends Controller
         if ($request->filled('search')) {
             $query->where('nama', 'ilike', '%' . $request->search . '%');
         }
-
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->category_id);
         }
-
         if ($request->filled('brand_id')) {
             $query->where('brand_id', $request->brand_id);
+        }
+        if ($request->filled('sub_kategori')) {
+            $query->where('sub_kategori', $request->sub_kategori);
         }
 
         return $query->orderBy('nama')->get();
