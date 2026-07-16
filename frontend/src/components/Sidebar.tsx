@@ -15,7 +15,7 @@ const menu = [
   { to: '/kasir', label: 'Kasir', icon: ShoppingCart, description: 'Transaksi penjualan' },
   { to: '/retur', label: 'Retur', icon: RotateCcw, description: 'Pengembalian barang' },
   { to: '/produk', label: 'Produk', icon: Package, description: 'Manajemen produk' },
-  { to: '/kategori', label: 'Kategori', icon: Tags, description: 'Kategori produk' },
+  { to: '/kategori', label: 'Merek', icon: Tags, description: 'Kelola merek produk' },
   { to: '/stok', label: 'Stok', icon: Boxes, description: 'Monitor stok' },
   { to: '/pelanggan', label: 'Pelanggan', icon: Users, description: 'Data pelanggan' },
   { to: '/laporan', label: 'Laporan', icon: FileBarChart, description: 'Analisis & laporan' },
